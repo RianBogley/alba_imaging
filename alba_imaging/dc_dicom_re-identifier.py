@@ -17,23 +17,24 @@ clinicalreferrals_dir = "L:/language/Dyslexia_project/ClinicalReferrals/"
 dyslexiascans_dir = "L:/language/Dyslexia_project/Participants/"
 
 # Ask for the patient's name:
+print("IMPORTANT: PLEASE ENTER ALL THE FOLLOWING INFORMATION ACCURATELY!")
 pidn = input("Enter the patient's PIDN: ")
 first_name = input("Enter the patient's first name: ")
 last_name = input("Enter the patient's last name: ")
-dcdate = input("Enter the patient's date of scan: ")
+dcdate = input("Enter the patient's date of scan (MM-DD-YYYY): ")
 
 # Modify paths
 patient_dir = os.path.join(clinicalreferrals_dir, pidn)
-
+# %%
 # Change DCDate into the "YYYYMMDD" format from the "MM-DD-YYYY" format:
 dcdate = dcdate[6:10] + dcdate[0:2] + dcdate[3:5]
 
 scans_dir = os.path.join(dyslexiascans_dir, pidn, dcdate)
-#%%
+
 # Check if the path exists, if not create a folder with the PIDN as the name in the dir:
 if not os.path.exists(patient_dir):
     os.mkdir(patient_dir)
-
+    
 # Copy over any subdirectories that start with the following strings from scans_dir to patient_dir:
 scan_types = [
     't1_mp2rage_jose_UNI_Images',
@@ -43,7 +44,7 @@ scan_types = [
     'dti_2mm_m3p2_b2500_96dir_10b0s_TRACEW',
     'dti_2mm_m3p2_b2500_96dir_10b0s_ADC',
     ]
-
+# %%
 # Find any subdirectories in scans_dir that start with the strings in scan_types and copy them to patient_dir:
 for scan_type in scan_types:
     for dirpath, dirnames, filenames in os.walk(scans_dir):
@@ -54,7 +55,7 @@ for scan_type in scan_types:
 for dirpath, dirnames, filenames in os.walk(patient_dir):
     for filename in [f for f in filenames if f.endswith('.nii') or f.endswith('.gz')]:
         os.remove(os.path.join(dirpath, filename))
-# %%
+
 # Find all dicom files in the specified directory, in all subdirectories:
 dicom_files = []
 for dirpath, dirnames, filenames in os.walk(patient_dir):
@@ -63,14 +64,13 @@ for dirpath, dirnames, filenames in os.walk(patient_dir):
 
 dicom_files
 
-#%%
 # For the first dicom in each subdirectory, print the 
 # PatientName, PatientID and AccessionNumber
 # for dicom_file in dicom_files:
 #     ds = pydicom.dcmread(dicom_file)
 #     print(ds.PatientName, ds.PatientID, ds.AccessionNumber)
 
-# %%
+
 # Edit the metadata of the dicom files to change the patient
 # name and PatientID
 for dicom_file in dicom_files:
@@ -79,16 +79,18 @@ for dicom_file in dicom_files:
     # Assign a random PatientID in lieu of a real MRN:
     ds.PatientID = '1234567890'
     ds.AccessionNumber = ''
+    # ds.StudyDate = dcdate
     ds.save_as(dicom_file)
 
-# %% 
-# for dicom_file in dicom_files:
-#     ds = pydicom.dcmread(dicom_file)
-#     print(ds.PatientName, ds.PatientID, ds.AccessionNumber)
-# %%
+
+for dicom_file in dicom_files:
+    ds = pydicom.dcmread(dicom_file)
+    print(ds.PatientName, ds.PatientID, ds.AccessionNumber, ds.StudyDate)
+
 
 # Clear PIDN, First_name, and Last_name:
 pidn = ''
 first_name = ''
 last_name = ''
+dcdate = ''
 # %%
