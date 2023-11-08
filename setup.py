@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='alba_imaging',
-    version='0.1',
+    version='0.2',
     packages=find_packages(),
     install_requires=[
         'matplotlib',
@@ -13,10 +13,9 @@ setup(
         'pingouin',
         'plotly',
         'progressbar',
-        'ptitprince',
         'scipy',
         'seaborn',
-        'sklearn',
+        'scikit-learn',
         'statsmodels',
     ],
     author='Rian Bogley',
