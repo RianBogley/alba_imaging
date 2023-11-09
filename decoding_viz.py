@@ -44,17 +44,19 @@ from alba_imaging.importing import import_pickle
 #                                  DEFINE DATA                                 #
 # ---------------------------------------------------------------------------- #
 # Specify working directory:
-main_dir = '/shared/language/language/rbogley/wmaps_decoding/edevhx_project/'
+# main_dir = '/shared/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
+main_dir = '/volumes/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
+
 
 # %%
 # ---------------------------------------------------------------------------- #
-#                                   PLOTTING                                   #
+#                                     SETUP                                    #
 # ---------------------------------------------------------------------------- #
 bg_img = nilearn.datasets.load_mni152_template(resolution=1)
 
 # %%
 # Find every pkl file in the main_dir and all its subdirs and add them to a list of pkl_files:
-pkl_files = glob.glob(main_dir + '**/*.pkl', recursive=True)
+pkl_files = glob.glob(main_dir + '*/*.pkl', recursive=True)
 for pkl in pkl_files:
     print(pkl)
 
@@ -73,9 +75,9 @@ for pickle in pkl_files:
     print(f'Variables in pickle: {pickle}')
     for key in data:
         print(key)
-    # Save the weight_img as a nifti:
-    nib.save(data['weight_img'], f'{run_dir}/{run_name}_weight_img.nii.gz')
-    
+        # Print the size in mb of each component:
+        print(sys.getsizeof(data[key])/1000000)
+
     print(f'Plotting results for: {pickle}')
     # Plot HTML view of the results:
     html_brain = html_brain_plot(data['weight_img'], bg_img)

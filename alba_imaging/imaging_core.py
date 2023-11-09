@@ -8,6 +8,8 @@ import pandas as pd
 import datetime
 import nibabel as nib
 import numpy as np
+import nilearn
+from nilearn.image import resample_to_img
 
 # %%
 # ---------------------------------------------------------------------------- #

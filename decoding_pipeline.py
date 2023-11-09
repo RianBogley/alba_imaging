@@ -60,17 +60,18 @@ from alba_imaging.imaging_core import lava_wmap_filepath, get_lava_wmap_filepath
 # Make a folder on the L drive for the analysis.
 # NOTE: This is where all job files will be saved and results will be copied.
 
-# Specify the main filepath as it is read on both your local machine,
-# and on the MGT node:
-local_ldrive_dir = '/volumes/language/language/rbogley/wmaps_decoding/edevhx_project/'
-mgt_ldrive_dir = '/shared/language/language/rbogley/wmaps_decoding/edevhx_project/'
+# Specify the main filepath as it is read on both your local machine, and on the MGT node:
+# local_ldrive_dir = '/volumes/language/language/rbogley/wmaps_decoding/edevhx_project/'
+# mgt_ldrive_dir = '/shared/language/language/rbogley/wmaps_decoding/edevhx_project/'
+local_ldrive_dir = '/volumes/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
+mgt_ldrive_dir = '/shared/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
 
 # Specify the main CSV filename and ensure it is in the above main folder:
 # csv_filename = 'LAVA_Merged_Data_first_neuropsychbedside_2023-11-03.csv'
 csv_filename = 'LAVA_Merged_Data_first_neuropsychbedside_2023-11-07.csv'
 
 # Now specify a path to a working directory on the MGT node that will be created:
-mgt_working_dir = '/mgt/language/rbogley/Production/projects/wmaps_project/edevhx_project/'
+mgt_working_dir = '/mgt/language/rbogley/Production/projects/wmaps_project/neuropsych_lava/'
 
 # Now specify a path to the R-Drive where the MAC Imaging-Core generated W-Maps
 # are found (as it is read on the MGT node):
@@ -79,8 +80,10 @@ wmaps_rdrive_dir = '/shared/macdata/projects/knect/images/wmaps/spmvbm12/'
 # %%
 # ----------------------------- DEFINE VARIABLES ----------------------------- #
 # Define variables specific for your analysis from your dataset.
-# dep_var_list = ['Calc','MMSETot','BNTCorr','BryTot','DigitFW','DigitBW','MTCorr','NumbLoc','ModRey','WRATTot'] # specify all dependent variable names (column names)
-dep_var_list = ['ARHQ','Sum Spelling & Reading','Sum Math & Geometry','Stuttering?']
+# dep_var_list = ['Calc','MMSETot','BNTCorr','BryTot','DigitFW','DigitBW','MTCorr','NumbLoc','ModRey','WRATTot']
+# dep_var_list = ['Calc','BNTCorr','BryTot','NumbLoc','ModRey','WRATTot']
+dep_var_list = ['Calc']
+# dep_var_list = ['ARHQ','Sum Spelling & Reading','Sum Math & Geometry','Stuttering?']
 
 # covar_list = ['Gender','Educ','AgeAtDC_neuropsychbedside'] # specify all covariate names
 # Specify PIDN and MRI DCDate column names:
@@ -93,8 +96,8 @@ wmaps_col = 'wmap_lava_mgt'
 # Define parameters for the decoder:
 estimator_type = 'ridge' # 'ridge' or 'svr'
 atlas = 'harvard_oxford' # 'harvard_oxford' or 'aal'
-analysis_type = 'voxel' # 'voxel' or 'parcel' - NOTE: May be able to remove this and just create jobs for both each time.
-train_test_ratio = 0.8 # 0.6 = 60% train, 40% test
+analysis_type = 'voxel' # 'voxel' or 'parcel'
+train_test_ratio = 0.8 # 0.8 = 80% train, 20% test
 stratify = True # True or False
 n_jobs = 8 # Number of jobs to run in parallel (do not exceed CPU core count)
 
@@ -132,6 +135,7 @@ for dep_var in dep_var_list:
                         estimator_type=estimator_type,
                         atlas=atlas,
                         train_test_ratio=train_test_ratio,
+                        stratify=stratify,
                         n_jobs=n_jobs
                         )
 

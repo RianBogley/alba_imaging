@@ -62,12 +62,12 @@ def decoder_python_job(csv,
                        local_ldrive_dir,
                        mgt_ldrive_dir,
                        mgt_working_dir,
-                       analysis_type='voxel',
-                       estimator_type='ridge',
-                       atlas='harvard_oxford',
-                       train_test_ratio=0.6,
-                       stratify=False,
-                       n_jobs=8):
+                       analysis_type,
+                       estimator_type,
+                       atlas,
+                       train_test_ratio,
+                       stratify,
+                       n_jobs):
     """
     This function creates a python file for running the decoder on the MGT node.
     Inputs are:
@@ -97,9 +97,11 @@ def decoder_python_job(csv,
 
     run_dir = os.path.join(mgt_working_dir, run_name)
 
+    run_local_dir = os.path.join(local_ldrive_dir, run_name)
+
     python_mgt_filepath = os.path.join(mgt_working_dir, python_filename)
 
-    python_local_ldrive_filepath = os.path.join(local_ldrive_dir, python_filename)
+    python_local_ldrive_filepath = os.path.join(run_local_dir, python_filename)
 
     # Set up the contents of the python script to be run on the MGT node:
     python_script_text = f"""# Import modules:
@@ -123,7 +125,6 @@ with sklearn.config_context(working_memory=125):
 from alba_imaging.modeling import decoder_split_data, decoder_prep, decoder_run, decoder_save, memory_usage_mb
 from alba_imaging.imaging_core import load_wmaps, load_atlas, resample_wmaps, fit_wmaps
 
-
 # Start the timer and memory measurement
 start_time = time.time()
 start_memory = memory_usage_mb()
@@ -139,33 +140,44 @@ if not os.path.exists('{run_dir}'):
 # Import the csv as dataframe:
 df=pd.read_csv('{csv}')
 
-atlas_maps,atlas_labels,y_train,y_test,wmaps_train,wmaps_test,wmaps_train_avg,wmaps_test_avg,masker,estimator,estimator_type,dep_var = decoder_prep(df=df,dep_var='{dep_var}',wmaps_col='{wmaps_col}',estimator_type='{estimator_type}',atlas='{atlas}',train_test_ratio={train_test_ratio},stratify={stratify})
+decoder_input = decoder_prep(df=df,
+                                dep_var='{dep_var}',
+                                wmaps_col='{wmaps_col}',
+                                atlas='{atlas}',
+                                estimator_type='{estimator_type}',
+                                train_test_ratio={train_test_ratio},
+                                stratify={stratify},
+                                analysis_type='{analysis_type}')
 prep_time = time.time()
+print(decoder_input)
 
 # Number of subjects in train and test sets:
-n_train = len(wmaps_train)
-n_test = len(wmaps_test)
+n_train = len(decoder_input['wmaps_train'])
+n_test = len(decoder_input['wmaps_test'])
 
-decoder_results = decoder_run(dep_var=dep_var,
-                                atlas_maps=atlas_maps,
-                                atlas_labels=atlas_labels,
-                                y_train=y_train,
-                                y_test=y_test,
-                                wmaps_train=wmaps_train,
-                                wmaps_test=wmaps_test,
-                                wmaps_train_avg=wmaps_train_avg,
-                                wmaps_test_avg=wmaps_test_avg,
-                                masker=masker,
-                                estimator=estimator,
-                                estimator_type=estimator_type,
+decoder_results = decoder_run(dep_var='{dep_var}',
+                                atlas_maps=decoder_input['atlas_maps'],
+                                atlas_labels=decoder_input['atlas_labels'],
+                                y_train=decoder_input['y_train'],
+                                y_test=decoder_input['y_test'],
+                                wmaps_train=decoder_input['wmaps_train'],
+                                wmaps_test=decoder_input['wmaps_test'],
+                                wmaps_train_avg=decoder_input['wmaps_train_avg'],
+                                wmaps_test_avg=decoder_input['wmaps_test_avg'],
+                                masker=decoder_input['masker'],
+                                estimator=decoder_input['estimator'],
+                                estimator_type=decoder_input['estimator_type'],
+                                analysis_type='{analysis_type}',
                                 scoring='neg_mean_squared_error',
                                 screening_percentile=5,
                                 n_jobs={n_jobs},
                                 standardize=True)
 run_time = time.time()
+print(decoder_results)
                                 
 decoder_save(decoder_results=decoder_results, main_dir='{run_dir}',
                 dep_var='{dep_var}', analysis_type='{analysis_type}', estimator_type='{estimator_type}', atlas='{atlas}')
+            
 
 # End the timer and memory measurement
 end_time = time.time()
@@ -207,15 +219,18 @@ if os.path.exists('{mgt_ldrive_dir}') and os.path.exists('{run_dir}'):
     shutil.copytree('{run_dir}', '{mgt_ldrive_dir}/{run_name}', dirs_exist_ok=True)
 
 """
-    # Print the location where files are being saved:
+    # Check if the local_ldrive_filepath doesn't exist, if it doesn't, create it:
+    if not os.path.exists(run_local_dir):
+        print(f'Creating run directory: {run_local_dir}')
+        os.mkdir(run_local_dir)
+    # Check if the path exists, if so, save the python script to it:
     print(f'Python script saved to: {python_local_ldrive_filepath}')
-
     with open(python_local_ldrive_filepath, 'w') as f:
         f.write(python_script_text)
 
     return run_name, python_filename, run_dir, python_local_ldrive_filepath
 
-def decoder_split_data(wmaps, y, train_test_ratio=0.6, stratify=True):
+def decoder_split_data(wmaps, y, train_test_ratio=0.8, stratify=True):
     """
     Split the data into training and test sets.
     Specify whether to stratify depending on the dependent variable type.
@@ -244,19 +259,26 @@ def decoder_split_data(wmaps, y, train_test_ratio=0.6, stratify=True):
 def decoder_prep(df,
                 dep_var,
                 wmaps_col,
-                atlas="harvard_oxford",
-                estimator_type="ridge",
-                train_test_ratio=0.6,
-                stratify=False):
+                atlas,
+                estimator_type,
+                train_test_ratio,
+                stratify,
+                analysis_type):
     """
     Prep the data for the decoder.
+    dep_var = The column name of the dependent variable of interest.
+    wmaps_col = The column name of the wmaps.
+    atlas = The atlas to be used (e.g. 'harvard_oxford' or 'aal')
+    estimator_type = The type of estimator_type to be used (e.g. 'ridge' or 'svr')
+    train_test_ratio = The ratio of training to test data (e.g. 0.8 = 80% train, 20% test)
+    stratify = Whether to stratify the data (True or False) False = normal sampling, True = stratified sampling
+    analysis_type = The type of analysis to be run (i.e. 'voxel' or 'parcel')
     """
     print('Running decoder_prep...')
     if estimator_type == "ridge":
         estimator = RidgeCV(alphas=[0.1, 1.0, 10.0], cv=5)
     elif estimator_type == "svr":
         estimator = SVR(kernel='linear')
-
 
     if atlas == "harvard_oxford":
         atlas = nilearn.datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
@@ -278,6 +300,11 @@ def decoder_prep(df,
     # Load the prespecified atlas using nibabel:
     atlas_maps, atlas_labels = load_atlas(atlas=atlas)
 
+    # ----------------- RESAMPLE W-MAPS IF PARCEL-BASED ANALYSIS ----------------- #
+    if analysis_type == "parcel":
+        print(f'Parcel-based analysis selected. Resampling wmaps to {atlas} atlas maps.')
+        wmaps = resample_wmaps(wmaps=wmaps, atlas_maps=atlas_maps)
+
     # -------------------- SPLIT INTO TRAININGS AND TEST SETS -------------------- #
     # Assumes variable is continuous, and will use normal sampling (not stratified):
     wmaps_train, wmaps_test, y_train, y_test = decoder_split_data(wmaps=wmaps, y=y, train_test_ratio=train_test_ratio, stratify=stratify)
@@ -286,7 +313,12 @@ def decoder_prep(df,
 
     # ------------------------------ SET UP MASKERS ------------------------------ #
     # Import NifTi masker for Voxel-Based Analysis:
-    masker = NiftiMasker(standardize=True, smoothing_fwhm=2, memory='nilearn_cache')
+    if analysis_type == "voxel":
+        print(f'Voxel-based analysis selected. Using NiftiMasker.')
+        masker = NiftiMasker(standardize=True, smoothing_fwhm=2, memory='nilearn_cache')
+    elif analysis_type == "parcel":
+        print(f'Parcel-based analysis selected. Using NiftiLabelsMasker.')
+        masker = NiftiLabelsMasker(labels_img=atlas_maps, standardize=True, smoothing_fwhm=2, memory='nilearn_cache')
 
     # ------------------------------ FIT THE W-MAPS ------------------------------ #
     # Fit the wmaps data:
@@ -294,7 +326,23 @@ def decoder_prep(df,
     wmaps_train_avg = fit_wmaps(wmaps=wmaps_train, masker=masker)
     wmaps_test_avg = fit_wmaps(wmaps=wmaps_test, masker=masker)
 
-    return atlas_maps, atlas_labels, y_train, y_test, wmaps_train, wmaps_test, wmaps_train_avg, wmaps_test_avg, masker, estimator, estimator_type, dep_var
+    decoder_input = {
+        'atlas_maps': atlas_maps,
+        'atlas_labels': atlas_labels,
+        'y_train': y_train,
+        'y_test': y_test,
+        'wmaps_train': wmaps_train,
+        'wmaps_test': wmaps_test,
+        'wmaps_train_avg': wmaps_train_avg,
+        'wmaps_test_avg': wmaps_test_avg,
+        'masker': masker,
+        'estimator': estimator,
+        'estimator_type': estimator_type,
+        'dep_var': dep_var,
+        'analysis_type': analysis_type,
+    }
+
+    return decoder_input
 
 def decoder_run(dep_var,
                 atlas_maps,
@@ -308,6 +356,7 @@ def decoder_run(dep_var,
                 masker,
                 estimator,
                 estimator_type,
+                analysis_type,
                 scoring='neg_mean_squared_error',
                 screening_percentile=5,
                 n_jobs=8,
@@ -350,28 +399,10 @@ def decoder_run(dep_var,
         'atlas_labels': atlas_labels,
         'y_pred': y_pred,
         'y_test_final': y_test_final,
-        'wmaps_test_final': wmaps_test_final,
         'prediction_score': prediction_score,
         'weight_img': weight_img,
+        'analysis_type': analysis_type,
     }
-
-    # decoder_results = {
-    # 'decoder': decoder,
-    # 'masker': masker,
-    # 'atlas_maps': atlas_maps,
-    # 'atlas_labels': atlas_labels,
-    # 'y_train': y_train,
-    # 'y_test': y_test,
-    # 'y_test_final': y_test_final,
-    # 'y_pred': y_pred,
-    # 'wmaps_train': wmaps_train,
-    # 'wmaps_test': wmaps_test,
-    # 'wmaps_train_avg': wmaps_train_avg,
-    # 'wmaps_test_avg': wmaps_test_avg,
-    # 'wmaps_test_final': wmaps_test_final,
-    # 'prediction_score': prediction_score,
-    # 'weight_img': weight_img
-    # }
 
     # Return the results:
     return decoder_results
