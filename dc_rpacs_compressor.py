@@ -28,9 +28,9 @@ import shutil
 # %% ##########################################################################
 # Set Variables:
 # Original scans directory filepath:
-scans_dir = 'L:/language/Dyslexia_project/Participants/'
+scans_dir = '/volumes/language/language/Dyslexia_project/Participants/'
 # rPACS upload directory filepath:
-rPACS_dir = 'L:/language/Dyslexia_project/ResearchRadiologyPACS/Not_Uploaded/'
+rPACS_dir = '/volumes/language/language/Dyslexia_project/ResearchRadiologyPACS/Not_Uploaded/'
 # Scan prefixes to be copied:
 scan_prefixes = ('dc', 'adys', 'leegt')
 # Scan types to be copied:
@@ -72,21 +72,26 @@ for new_scan in new_scans:
     os.mkdir(rPACS_dir + new_scan)
     # Then, copy any specified scan subfolders from the original scans_dir
     # to the new folder in rPACS_dir unless it contains the string "reject":
+    # Also, only copy files that end in .dcm, avoiding any other filetypes:
     for root, dirs, files in os.walk(scans_dir + new_scan):
         for dir in dirs:
             if any(s in dir for s in scan_types):
                 if 'reject' not in dir.lower():
-                    shutil.copytree(os.path.join(root, dir), 
-                    os.path.join(rPACS_dir + new_scan, dir))
-    # Remove any potentially created NifTI files (ending in .nii or .nii.gz)
-    # from the new folder to leave only the DICOM files for upload:
-    for root, dirs, files in os.walk(rPACS_dir + new_scan):
-        for file in files:
-            if file.endswith(('.nii', '.nii.gz')):
-                os.remove(os.path.join(root, file))
+                    # Create the destination directory if it doesn't exist
+                    print(f'Copying {dir} to {new_scan}...')
+                    destination_dir = os.path.join(rPACS_dir + new_scan, dir)
+                    os.makedirs(destination_dir, exist_ok=True)
+                    # Copy only .dcm files from the source directory to the destination directory
+                    for file in os.listdir(os.path.join(root, dir)):
+                        if file.endswith('.dcm'):
+                            shutil.copy(os.path.join(root, dir, file), destination_dir)
     # Compress the newly created folder into a tar.gz file (.tgz):
+    print(f'Compressing {new_scan} into a tar.gz file...')
     with tarfile.open(rPACS_dir + new_scan + '.tgz', 'w:gz') as tar:
         tar.add(rPACS_dir + new_scan, arcname=new_scan)
+    # Print that the compression is complete:
+    print(f'Compression of {new_scan} is complete.')
+    print(f'Removing copied {new_scan} folder from rPACS_dir...')
     # Use shutil to remove the copied folder and all its contents:
     shutil.rmtree(rPACS_dir + new_scan)
 # %% ##########################################################################
@@ -106,3 +111,4 @@ for root, dirs, files in os.walk(rPACS_dir):
                     os.path.getsize(rPACS_dir + file)/1000000
                     ) ,'MB), please check it.')
 ###############################################################################
+# %%
