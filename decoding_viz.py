@@ -55,44 +55,64 @@ main_dir = '/volumes/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
 bg_img = nilearn.datasets.load_mni152_template(resolution=1)
 
 # %%
-# Find every pkl file in the main_dir and all its subdirs and add them to a list of pkl_files:
-pkl_files = glob.glob(main_dir + '*/*.pkl', recursive=True)
-for pkl in pkl_files:
-    print(pkl)
+# Find every weight_img file in the main_dir and all its subdirs and add them to a list of weight_imgs:
+weight_imgs = glob.glob(main_dir + '*/*weight_img*.nii.gz', recursive=True)
+for weight_img in weight_imgs:
+    print(weight_img)
 
 # %%
-# For each pickle file found, import the pickle file then plot and save the results:
-for pickle in pkl_files:
-    run_name = os.path.basename(pickle).split('.pkl')[0]
-    run_dir = f'{os.path.dirname(pickle)}/'
+# For each weight_img found, plot and save the results:
+for weight_img in weight_imgs:
+    run_name = os.path.basename(weight_img).split('_weight_img')[0]
+    run_dir = f'{os.path.dirname(weight_img)}/'
     print(f'Run name: {run_name}')
     print(f'Run dir: {run_dir}')
-
     print(f'Importing: {run_name}')
-    data = import_pickle(pickle)
-    print(f'Finished importing: {pickle}')
-    # Show all the variables in the pickle file:
-    print(f'Variables in pickle: {pickle}')
-    for key in data:
-        print(key)
-        # Print the size in mb of each component:
-        print(sys.getsizeof(data[key])/1000000)
+    print(f'Finished importing: {run_name}')
+    print(f'Plotting results for: {run_name}')
 
-    print(f'Plotting results for: {pickle}')
-    # Plot HTML view of the results:
-    html_brain = html_brain_plot(data['weight_img'], bg_img)
-    html_brain.save_as_html(f'{run_dir}/{run_name}_html_brain.html')
-    html_brain.save_as_html(f'{main_dir}/{run_name}_html_brain.html')
-    # Plot View Img view of the results:
-    view_img = view_img_plot(data['weight_img'], bg_img)
-    # Plot Glass Brain view of the results:
-    glass_brain = glass_brain_plot(data['weight_img'])
-    glass_brain.savefig(f'{main_dir}/{run_name}_glass_brain.png', dpi=300)
-    # Plot & save the Mean Absolute Error:
-    mean_abs_err_plot(y_test_final=data['y_test_final'],y_pred=data['y_pred'],prediction_score=data['prediction_score'],main_dir=main_dir,run_name=run_name)
-    # Plot & save the True - Predicted values:
-    true_minus_pred_plot(y_test_final=data['y_test_final'],y_pred=data['y_pred'],main_dir=main_dir,run_name=run_name)
-    print(f'Finished plotting results for: {pickle}')
-    print(f'All figures saved to: {run_dir}')
+    # Load the weight_img:
+    weight_img = nib.load(weight_img)
+
+    # Plot & save the html file:
+    html_brain = html_brain_plot(nifti=weight_img,bg_img=bg_img)
+    html_brain.save_as_html(f'{run_dir}{run_name}_weight_img.html')
+    html_brain.open_in_browser
+
+    # Plot & save glass brain:
+    glass_brain = glass_brain_plot(nifti=weight_img)
+    glass_brain.savefig(f'{run_dir}{run_name}_weight_img_glass_brain.png')
+
+# # %%
+# # Find every pkl file in the main_dir and all its subdirs and add them to a list of pkl_files:
+# pkl_files = glob.glob(main_dir + '*/*.pkl', recursive=True)
+# for pkl in pkl_files:
+#     print(pkl)
+
+# # %%
+# # For each pickle file found, import the pickle file then plot and save the results:
+# for pickle in pkl_files:
+#     run_name = os.path.basename(pickle).split('.pkl')[0]
+#     run_dir = f'{os.path.dirname(pickle)}/'
+#     print(f'Run name: {run_name}')
+#     print(f'Run dir: {run_dir}')
+
+#     print(f'Importing: {run_name}')
+#     data = import_pickle(pickle)
+#     print(f'Finished importing: {pickle}')
+#     # Show all the variables in the pickle file:
+#     print(f'Variables in pickle: {pickle}')
+#     for key in data:
+#         print(key)
+#     print(f'Plotting results for: {pickle}')
+#     # Plot & save the Mean Absolute Error:
+#     mean_abs_err_plot(y_test_final=data['y_test_final'],y_pred=data['y_pred'],prediction_score=data['prediction_score'],main_dir=run_dir,run_name=run_name)
+#     # Plot & save the True - Predicted values:
+#     true_minus_pred_plot(y_test_final=data['y_test_final'],y_pred=data['y_pred'],main_dir=run_dir,run_name=run_name)
+#     print(f'Finished plotting results for: {pickle}')
+#     print(f'All figures saved to: {run_dir}')
+
+# # %%
+
 
 # %%

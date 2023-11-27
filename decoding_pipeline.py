@@ -40,7 +40,7 @@ from sklearn.feature_selection import VarianceThreshold
 from sklearn.linear_model import LogisticRegression, RidgeCV, LogisticRegressionCV
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, classification_report, mean_squared_log_error, confusion_matrix
-from sklearn.model_selection import GridSearchCV, train_test_split, RepeatedStratifiedKFold
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 import statsmodels.api as sm
@@ -53,6 +53,7 @@ from statsmodels.stats.contingency_tables import StratifiedTable
 # from alba_imaging.imaging_core import create_wynton_job_file
 from alba_imaging.modeling import decoder_python_job
 from alba_imaging.imaging_core import lava_wmap_filepath, get_lava_wmap_filepaths, new_wmap_filepath, get_new_wmap_filepaths, clean_df_wmaps
+from alba_imaging.filtering import clean_and_sort, filter_df_criteria
 # from alba_imaging.importing import clean_and_sort
 
 # %%
@@ -79,17 +80,35 @@ wmaps_rdrive_dir = '/shared/macdata/projects/knect/images/wmaps/spmvbm12/'
 
 # %%
 # ----------------------------- DEFINE VARIABLES ----------------------------- #
-# Define variables specific for your analysis from your dataset.
-# dep_var_list = ['Calc','MMSETot','BNTCorr','BryTot','DigitFW','DigitBW','MTCorr','NumbLoc','ModRey','WRATTot']
-# dep_var_list = ['Calc','BNTCorr','BryTot','NumbLoc','ModRey','WRATTot']
-dep_var_list = ['Calc']
-# dep_var_list = ['ARHQ','Sum Spelling & Reading','Sum Math & Geometry','Stuttering?']
+# Define column names for variables specific for your analysis from your dataset.
+# y_cols = ['Calc','MMSETot','BNTCorr','BryTot','DigitFW','DigitBW','MTCorr','NumbLoc','ModRey','WRATTot']
+# y_cols = ['Calc','BNTCorr','BryTot','NumbLoc','ModRey','WRATTot']
+y_cols = ['Calc','BNTCorr']
+# y_cols = ['ARHQ','Sum Spelling & Reading','Sum Math & Geometry','Stuttering?']
 
 # covar_list = ['Gender','Educ','AgeAtDC_neuropsychbedside'] # specify all covariate names
 # Specify PIDN and MRI DCDate column names:
 pidn_col = 'PIDN'
 dcdate_col = 'DCDate_t1'
-wmaps_col = 'wmap_lava_mgt'
+# Specify the column for the indendepent variable (X) aka. the W-Map column name:
+X_col = 'wmap_lava_mgt'
+
+# %%
+# -------------------------- INCLUSIONS & EXCLUSIONS ------------------------- #
+# If you want to add any additional exclusion or inclusion criteria, do so here:
+# Otherwise, the data will only exclude cases with invalid values in the y & X.
+
+# # EXCLUSIONS:
+exclusions_dict = {
+    # 'dx_1': ['HC'],
+}
+
+# INCLUSIONS:
+inclusions_dict = {
+    # 'dx_1': ['AD', 'MCI', 'PPAnos', 'nfvPPA', 'lvPPA', 'Other', 'PSP', 'bvFTD',
+    #    'CBS', 'svPPA', 'DLB', 'PCA', 'PD', 'sbvFTD', 'FTD',
+    #    'ALS', 'CBD'],
+}
 
 # %%
 # --------------------------- DEFINE MODEL SETTINGS -------------------------- #
@@ -97,7 +116,7 @@ wmaps_col = 'wmap_lava_mgt'
 estimator_type = 'ridge' # 'ridge' or 'svr'
 atlas = 'harvard_oxford' # 'harvard_oxford' or 'aal'
 analysis_type = 'voxel' # 'voxel' or 'parcel'
-train_test_ratio = 0.8 # 0.8 = 80% train, 20% test
+train_test_ratio = 0.6 # 0.8 = 80% train, 20% test
 stratify = True # True or False
 n_jobs = 8 # Number of jobs to run in parallel (do not exceed CPU core count)
 
@@ -114,20 +133,19 @@ mgt_csv_filepath = os.path.join(mgt_ldrive_dir, csv_filename)
 df = pd.read_csv(local_csv_filepath, low_memory=False)
 
 # %%
-for dep_var in dep_var_list:
-    print(f"Generating python job file and csv for {dep_var}...")
-    df_temp = df.copy()
-
+for y_col in y_cols:
+    print(f"Generating python job file and csv for {y_col}...")
+    # df_temp = df.copy()
     ################################################
-    # NOTE: TEMPORARILY TRIM DF:
-    df_temp = df_temp[df_temp[dep_var].notna()]
-    df_temp = df_temp[df_temp['wmap_lava'].notna()] #NOTE: MAKE WMAP LAVA A VARIABLE
-    df_temp = df_temp.sample(n=40, random_state=2)
+    # # NOTE: TEMPORARILY TRIM DF:
+    # df_temp = df_temp[df_temp[y_col].notna()]
+    # df_temp = df_temp[df_temp['wmap_lava'].notna()] #NOTE: MAKE WMAP LAVA A VARIABLE
+    # df_temp = df_temp.sample(n=40, random_state=2)
     ################################################
 
     decoder_python_job(csv=mgt_csv_filepath,
-                        dep_var=dep_var,
-                        wmaps_col=wmaps_col,
+                        y_col=y_col,
+                        X_col=X_col,
                         local_ldrive_dir=local_ldrive_dir,
                         mgt_ldrive_dir=mgt_ldrive_dir,
                         mgt_working_dir=mgt_working_dir,
@@ -136,12 +154,14 @@ for dep_var in dep_var_list:
                         atlas=atlas,
                         train_test_ratio=train_test_ratio,
                         stratify=stratify,
-                        n_jobs=n_jobs
+                        n_jobs=n_jobs,
+                        inclusions_dict=inclusions_dict,
+                        exclusions_dict=exclusions_dict,
                         )
 
     # NOTE: OLD FOR WYNTON RUNS, DO NOT USE YET:
     # decoder_wynton_job(csv=csv_filepath,
-    #                     dep_var=dep_var,
+    #                     y_col=y_col,
     #                     ldrive_dir=ldrive_dir,
     #                     mgt_dir=mgt_dir,
     #                     wynton_venv_dir=wynton_venv_dir,

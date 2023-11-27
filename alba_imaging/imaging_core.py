@@ -339,11 +339,6 @@ def copy_lava_wmaps(df,
     df.to_csv(f'{wmaps_dir}/wmaps.csv', index=False)
     return df
 
-
-
-
-
-
 # Load in W-Maps using nibabel:
 def load_wmaps(df, wmaps_col):
     """
@@ -375,9 +370,9 @@ def resample_wmaps(wmaps, atlas_maps):
     """
     # Resample W-Maps to Atlas shape for Parcellation-Based Analysis:
     print('Resampling W-Maps to Atlas shape for Parcellation-Based Analysis...')
-    wmaps_parcel = [resample_to_img(wmap, atlas_maps) for wmap in wmaps]
+    wmaps = [resample_to_img(wmap, atlas_maps) for wmap in wmaps]
     # Return the resampled W-Maps:
-    return wmaps_parcel
+    return wmaps
 
 # Fit W-Maps to the specified masker:
 def fit_wmaps(wmaps, masker):
@@ -386,15 +381,19 @@ def fit_wmaps(wmaps, masker):
     then for each W-Map in the fitted data,
     inverse transform each W-Map back to the original shape.
     """
+    # Print the original wmaps shape:
+    print(f'Original shape of W-Maps: {wmaps[0].shape}')
+    # Print the shape of the atlas:
+    print(f'Masker shape: {masker.mask_img_.shape}')
     # Fit the train and test W-Maps to the masker:
-    wmaps_fitted = masker.fit_transform(wmaps)
-    # Print the shape of the fitted data:
-    print(f'Fitted shape: {wmaps_fitted.shape}')
+    wmaps_fitted = [masker.fit_transform(wmap) for wmap in wmaps]
+    # Print the shape of the fitted data wmaps:
+    print(f'Fitted W-Maps shape: {wmaps_fitted[0].shape}')
     # For each W-Map in the fitted train and test sets,
     # inverse transform each W-Map back to the original shape:
     wmaps_avg = [masker.inverse_transform(wmap) for wmap in wmaps_fitted]
     # Print the shape of the first case in the set:
-    print(f'Inverse-transformed shape: {wmaps_avg[0].shape}')
+    print(f'Inverse-transformed W-Maps shape: {wmaps_avg[0].shape}')
     # Return the inverse-transformed W-Maps:
     return wmaps_avg
 

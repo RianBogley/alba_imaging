@@ -43,6 +43,7 @@ from sklearn.svm import SVR
 
 # ----------------------------- CUSTOM LIBRARIES ----------------------------- #
 from alba_imaging.imaging_core import get_lava_wmap_filepaths, load_wmaps, load_atlas, resample_wmaps, fit_wmaps
+from alba_imaging.filtering import filter_df_criteria, clean_and_sort
 
 # %%
 # ---------------------------------------------------------------------------- #
@@ -57,8 +58,8 @@ def memory_usage_mb():
 # This function creates a specific python job file to run the decoder on the 
 # MGT node using a virtual environment.
 def decoder_python_job(csv,
-                       dep_var,
-                       wmaps_col,
+                       y_col,
+                       X_col,
                        local_ldrive_dir,
                        mgt_ldrive_dir,
                        mgt_working_dir,
@@ -67,7 +68,9 @@ def decoder_python_job(csv,
                        atlas,
                        train_test_ratio,
                        stratify,
-                       n_jobs):
+                       n_jobs,
+                       exclusions_dict=None,
+                       inclusions_dict=None):
     """
     This function creates a python file for running the decoder on the MGT node.
     Inputs are:
@@ -77,9 +80,9 @@ def decoder_python_job(csv,
             correctly such that they can be accessed from the node, e.g.
             /shared/language/... or /mgt/language/...)
         - A column with the dependent variable of interest.
-    - dep_var = The name of the dependent variable of interest
+    - y_col = The name of the column with the dependent variable of interest
         (should be same name as col)
-    - wmaps_col = The name of the column with the wmap filepaths
+    - X_col = The name of the column with the independent variable (i.e. wmap filepaths)
     - local_ldrive_dir = The location of the L-Drive directory as it is read on your local machine.
     - mgt_ldrive_dir = The location of the L-Drive directory as it is read on the MGT node.
     - mgt_working_dir = The location of the MGT directory where the output will be saved.
@@ -88,19 +91,18 @@ def decoder_python_job(csv,
     - atlas = The atlas to be used (e.g. 'harvard_oxford' or 'aal')
     - train_test_ratio = The ratio of training to test data (e.g. 0.6 = 60% train, 40% test)
     - stratify = Whether to stratify the data (True or False) False = normal sampling, True = stratified sampling
+    - n_jobs = The number of jobs to run in parallel.
+    - exclusions_dict = A dictionary of column names and corresponding lists of values to exclude.
+    - inclusions_dict = A dictionary of column names and corresponding lists of values to include.
+        Example: {'Diagnosis_Column': ['Normal', 'Control']}
     """
 
     # Set up the run info:
-    run_name = f'decoder_{dep_var}_{analysis_type}_{estimator_type}_{atlas}'
-
+    run_name = f'decoder_{y_col}_{analysis_type}_{estimator_type}_{atlas}'
     python_filename = f'{run_name}.py'
-
     run_dir = os.path.join(mgt_working_dir, run_name)
-
     run_local_dir = os.path.join(local_ldrive_dir, run_name)
-
     python_mgt_filepath = os.path.join(mgt_working_dir, python_filename)
-
     python_local_ldrive_filepath = os.path.join(run_local_dir, python_filename)
 
     # Set up the contents of the python script to be run on the MGT node:
@@ -123,6 +125,7 @@ with sklearn.config_context(working_memory=125):
     pass
 
 from alba_imaging.modeling import decoder_split_data, decoder_prep, decoder_run, decoder_save, memory_usage_mb
+from alba_imaging.filtering import clean_and_sort, filter_df_criteria
 from alba_imaging.imaging_core import load_wmaps, load_atlas, resample_wmaps, fit_wmaps
 
 # Start the timer and memory measurement
@@ -140,30 +143,33 @@ if not os.path.exists('{run_dir}'):
 # Import the csv as dataframe:
 df=pd.read_csv('{csv}')
 
+exclusions_dict = {exclusions_dict}
+inclusions_dict = {inclusions_dict}
+
 decoder_input = decoder_prep(df=df,
-                                dep_var='{dep_var}',
-                                wmaps_col='{wmaps_col}',
+                                y_col='{y_col}',
+                                X_col='{X_col}',
                                 atlas='{atlas}',
                                 estimator_type='{estimator_type}',
                                 train_test_ratio={train_test_ratio},
                                 stratify={stratify},
-                                analysis_type='{analysis_type}')
+                                analysis_type='{analysis_type}',
+                                exclusions_dict=exclusions_dict,
+                                inclusions_dict=inclusions_dict)
 prep_time = time.time()
 print(decoder_input)
 
 # Number of subjects in train and test sets:
-n_train = len(decoder_input['wmaps_train'])
-n_test = len(decoder_input['wmaps_test'])
+n_train = len(decoder_input['X_train'])
+n_test = len(decoder_input['X_test'])
 
-decoder_results = decoder_run(dep_var='{dep_var}',
+decoder_results = decoder_run(y_col='{y_col}',
                                 atlas_maps=decoder_input['atlas_maps'],
                                 atlas_labels=decoder_input['atlas_labels'],
                                 y_train=decoder_input['y_train'],
                                 y_test=decoder_input['y_test'],
-                                wmaps_train=decoder_input['wmaps_train'],
-                                wmaps_test=decoder_input['wmaps_test'],
-                                wmaps_train_avg=decoder_input['wmaps_train_avg'],
-                                wmaps_test_avg=decoder_input['wmaps_test_avg'],
+                                X_train=decoder_input['X_train'],
+                                X_test=decoder_input['X_test'],
                                 masker=decoder_input['masker'],
                                 estimator=decoder_input['estimator'],
                                 estimator_type=decoder_input['estimator_type'],
@@ -176,7 +182,7 @@ run_time = time.time()
 print(decoder_results)
                                 
 decoder_save(decoder_results=decoder_results, main_dir='{run_dir}',
-                dep_var='{dep_var}', analysis_type='{analysis_type}', estimator_type='{estimator_type}', atlas='{atlas}')
+                y_col='{y_col}', analysis_type='{analysis_type}', estimator_type='{estimator_type}', atlas='{atlas}')
             
 
 # End the timer and memory measurement
@@ -197,13 +203,25 @@ with open('{run_dir}/{run_name}_run_info.txt', 'w') as f:
     f.write(f'\\n')
     f.write(f'Run name: {run_name}\\n')
     f.write(f'CSV file: {csv}\\n')
-    f.write(f'Dependent variable: {dep_var}\\n')
-    f.write(f'W-Maps column: {wmaps_col}\\n')
+    f.write(f'Dependent variable: {y_col}\\n')
+    f.write(f'Indenpendent variable column: {X_col}\\n')
     f.write(f'Analysis type: {analysis_type}\\n')
     f.write(f'Estimator type: {estimator_type}\\n')
     f.write(f'Atlas: {atlas}\\n')
     f.write(f'Stratify: {stratify}\\n')
     f.write(f'Train test ratio: {train_test_ratio}\\n')
+    f.write(f'Number of jobs: {n_jobs}\\n')
+    f.write(f'\\n')
+    if exclusions_dict and exclusions_dict != {{}}:
+        f.write(f'Exclusion criteria:\\n')
+        for col in exclusions_dict.keys():
+            f.write(f'{'{col}'}: {'{exclusions_dict[col]}'}\\n')
+    if inclusions_dict and inclusions_dict != {{}}:
+        f.write(f'Inclusion criteria:\\n')
+        for col in inclusions_dict.keys():
+            f.write(f'{'{col}'}: {'{inclusions_dict[col]}'}\\n')
+
+    f.write(f'\\n')    
     f.write(f'Number of subjects in train set: {'{n_train}'}\\n')
     f.write(f'Number of subjects in test set: {'{n_test}'}\\n')
     f.write(f'\\n')
@@ -239,35 +257,37 @@ def decoder_split_data(wmaps, y, train_test_ratio=0.8, stratify=True):
     if stratify:
         print('Using stratified sampling to split data into training and test sets.')
         # Use stratified sampling to split the data into training and test sets:
-        wmaps_train, wmaps_test, y_train, y_test = train_test_split(
+        X_train, X_test, y_train, y_test = train_test_split(
             wmaps, y, train_size=train_test_ratio, random_state=0, stratify=y)
     else:
         print('Using normal sampling to split data into training and test sets.')
         # Use normal sampling to split the data into training and test sets:
-        wmaps_train, wmaps_test, y_train, y_test = train_test_split(
+        X_train, X_test, y_train, y_test = train_test_split(
             wmaps, y, train_size=train_test_ratio, random_state=0)
 
     # Print the shape, size, and number of cases in the training and test sets:
-    print(f'wmaps_train shape: {wmaps_train[0].shape}')
-    print(f'wmaps_test shape: {wmaps_test[0].shape}')
-    print(f'{len(wmaps_train)} cases in wmaps_train.')
-    print(f'{len(wmaps_test)} cases in wmaps_test.')
+    print(f'X_train shape: {X_train[0].shape}')
+    print(f'X_test shape: {X_test[0].shape}')
+    print(f'{len(X_train)} cases in X_train.')
+    print(f'{len(X_test)} cases in X_test.')
 
     # Return the split data:
-    return wmaps_train, wmaps_test, y_train, y_test
+    return X_train, X_test, y_train, y_test
 
 def decoder_prep(df,
-                dep_var,
-                wmaps_col,
+                y_col,
+                X_col,
                 atlas,
                 estimator_type,
                 train_test_ratio,
                 stratify,
-                analysis_type):
+                analysis_type,
+                exclusions_dict=None,
+                inclusions_dict=None):
     """
     Prep the data for the decoder.
-    dep_var = The column name of the dependent variable of interest.
-    wmaps_col = The column name of the wmaps.
+    y_col = The column name of the dependent variable of interest.
+    X_col = The column name of the wmaps.
     atlas = The atlas to be used (e.g. 'harvard_oxford' or 'aal')
     estimator_type = The type of estimator_type to be used (e.g. 'ridge' or 'svr')
     train_test_ratio = The ratio of training to test data (e.g. 0.8 = 80% train, 20% test)
@@ -285,16 +305,36 @@ def decoder_prep(df,
     elif atlas == "aal":
         atlas = nilearn.datasets.fetch_atlas_aal(version='SPM12')
 
-    # ------------------------------ TRIM DATAFRAME ------------------------------ #
-    df = df[df[dep_var].notna()]
-    df = df[df[wmaps_col].notna()]
-    
+    # ----------------------- CLEAN AND SORT THE DATAFRAME ----------------------- #
+    # Drop any cases that have an invalid or missing value for X or y:
+    df = clean_and_sort(df=df, col_name=y_col, pidn_col='PIDN')
+    df = clean_and_sort(df=df, col_name=X_col, pidn_col='PIDN')
+
+    # -------------------------- INCLUSIONS & EXCLUSIONS ------------------------- #
+    # If any additional exclusion or inclusion criteria are specified, filter the df:
+    # Otherwise, the data will only exclude cases with invalid values in the y & X.
+
+    # EXCLUSIONS:
+    if exclusions_dict and exclusions_dict != {}:
+        # Clean and sort to get rid of any cases that have an invalid or missing value
+        # for any of the exclusion criteria columns:
+        for col in exclusions_dict.keys():
+            df = clean_and_sort(df=df, col_name=col, pidn_col='PIDN')
+        df = filter_df_criteria(df, exclusions_dict, policy='exclude')
+    # INCLUSIONS:
+    if inclusions_dict and inclusions_dict != {}:
+        # Clean and sort to get rid of any cases that have an invalid or missing value
+        # for any of the inclusion criteria columns:
+        for col in inclusions_dict.keys():
+            df = clean_and_sort(df=df, col_name=col, pidn_col='PIDN')
+        df = filter_df_criteria(df, inclusions_dict, policy='include')
+
     # --------------------------------- DEFINE Y --------------------------------- #
-    y = np.array(df[dep_var])
+    y = np.array(df[y_col])
     
     # ------------------------------ LOAD THE W-MAPS ----------------------------- #
     # Load all the W-Maps using nibabel:
-    wmaps = load_wmaps(df=df, wmaps_col=wmaps_col)
+    wmaps = load_wmaps(df=df, wmaps_col=X_col)
 
     # ------------------------------ LOAD THE ATLAS ------------------------------ #
     # Load the prespecified atlas using nibabel:
@@ -307,52 +347,46 @@ def decoder_prep(df,
 
     # -------------------- SPLIT INTO TRAININGS AND TEST SETS -------------------- #
     # Assumes variable is continuous, and will use normal sampling (not stratified):
-    wmaps_train, wmaps_test, y_train, y_test = decoder_split_data(wmaps=wmaps, y=y, train_test_ratio=train_test_ratio, stratify=stratify)
+    X_train, X_test, y_train, y_test = decoder_split_data(wmaps=wmaps, y=y, train_test_ratio=train_test_ratio, stratify=stratify)
     
     #TODO: ADD LOGIC TO STRATIFY IF CATEGORICAL        
 
     # ------------------------------ SET UP MASKERS ------------------------------ #
-    # Import NifTi masker for Voxel-Based Analysis:
     if analysis_type == "voxel":
         print(f'Voxel-based analysis selected. Using NiftiMasker.')
         masker = NiftiMasker(standardize=True, smoothing_fwhm=2, memory='nilearn_cache')
+        print(f'Masker parameters: {masker.get_params()}')
     elif analysis_type == "parcel":
         print(f'Parcel-based analysis selected. Using NiftiLabelsMasker.')
         masker = NiftiLabelsMasker(labels_img=atlas_maps, standardize=True, smoothing_fwhm=2, memory='nilearn_cache')
-
-    # ------------------------------ FIT THE W-MAPS ------------------------------ #
-    # Fit the wmaps data:
-    # Voxel-Based Analysis:
-    wmaps_train_avg = fit_wmaps(wmaps=wmaps_train, masker=masker)
-    wmaps_test_avg = fit_wmaps(wmaps=wmaps_test, masker=masker)
+        print(f'Masker parameters: {masker.get_params()}')
+        # Fit the wmaps to the Atlas:
+        X_train = fit_wmaps(wmaps=X_train, masker=masker)
+        X_test = fit_wmaps(wmaps=X_test, masker=masker)
 
     decoder_input = {
         'atlas_maps': atlas_maps,
         'atlas_labels': atlas_labels,
         'y_train': y_train,
         'y_test': y_test,
-        'wmaps_train': wmaps_train,
-        'wmaps_test': wmaps_test,
-        'wmaps_train_avg': wmaps_train_avg,
-        'wmaps_test_avg': wmaps_test_avg,
+        'X_train': X_train,
+        'X_test': X_test,
         'masker': masker,
         'estimator': estimator,
         'estimator_type': estimator_type,
-        'dep_var': dep_var,
+        'y_col': y_col,
         'analysis_type': analysis_type,
     }
 
     return decoder_input
 
-def decoder_run(dep_var,
+def decoder_run(y_col,
                 atlas_maps,
                 atlas_labels,
                 y_train,
                 y_test,
-                wmaps_train,
-                wmaps_test,
-                wmaps_train_avg,
-                wmaps_test_avg,
+                X_train,
+                X_test,
                 masker,
                 estimator,
                 estimator_type,
@@ -375,15 +409,15 @@ def decoder_run(dep_var,
     print(f'Decoder parameters: {decoder.get_params()}')
 
     # Fit the decoder to the training data:
-    decoder.fit(wmaps_train, y_train)
+    decoder.fit(X_train, y_train)
 
     # Sort the test data for better visualization:
     perm = np.argsort(y_test)[::-1]
-    y_test_final= y_test[perm]
-    wmaps_test_final = np.array(wmaps_test)[perm]
+    y_test= y_test[perm]
+    X_test = np.array(X_test)[perm]
 
     # Predict the test data using the decoder:
-    y_pred = decoder.predict(wmaps_test_final)
+    y_pred = decoder.predict(X_test)
 
     # Calculate Mean Absolute Error:
     prediction_score = -np.mean(decoder.cv_scores_['beta'])
@@ -392,13 +426,13 @@ def decoder_run(dep_var,
     weight_img = decoder.coef_img_['beta']
     
     decoder_results = {
-        'dep_var': dep_var,
+        'y_col': y_col,
         'decoder': decoder,
         'masker': masker,
         'atlas_maps': atlas_maps,
         'atlas_labels': atlas_labels,
         'y_pred': y_pred,
-        'y_test_final': y_test_final,
+        'y_test': y_test,
         'prediction_score': prediction_score,
         'weight_img': weight_img,
         'analysis_type': analysis_type,
@@ -407,7 +441,7 @@ def decoder_run(dep_var,
     # Return the results:
     return decoder_results
 
-def decoder_save(decoder_results, main_dir, dep_var, analysis_type, estimator_type, atlas):
+def decoder_save(decoder_results, main_dir, y_col, analysis_type, estimator_type, atlas):
     """
     Save the decoder data.
     """
@@ -415,10 +449,10 @@ def decoder_save(decoder_results, main_dir, dep_var, analysis_type, estimator_ty
     # Current Date:
     current_date = time.strftime("%m-%d-%Y")
 
-    with open(f'{main_dir}/{dep_var}_{analysis_type}_{estimator_type}_{atlas}_{current_date}_decoder_results.pkl', 'wb') as f:
+    with open(f'{main_dir}/{y_col}_{analysis_type}_{estimator_type}_{atlas}_{current_date}_decoder_results.pkl', 'wb') as f:
         pickle.dump(decoder_results, f)
     # Save the weight_img as a nifti file to the dir:
-    nib.save(decoder_results['weight_img'], f'{main_dir}/{dep_var}_{analysis_type}_{estimator_type}_{atlas}_{current_date}_weight_img.nii.gz')
+    nib.save(decoder_results['weight_img'], f'{main_dir}/{y_col}_{analysis_type}_{estimator_type}_{atlas}_{current_date}_weight_img.nii.gz')
 
 # %%
 
@@ -426,7 +460,7 @@ def decoder_save(decoder_results, main_dir, dep_var, analysis_type, estimator_ty
 
 
 # def decoder_wynton_job(csv,
-#                        dep_var,
+#                        y_col,
 #                        mgt_ldrive_dir='/Users/rbogley/Desktop/',
 #                        mgt_working_dir='/mgt/language/rbogley/Production/projects/wmaps_project/',
 #                        wynton_venv_dir="/wynton/home/tempini/rbogley/wmaps_predictor/",
@@ -438,8 +472,8 @@ def decoder_save(decoder_results, main_dir, dep_var, analysis_type, estimator_ty
 #     """
 
 #     # Set up the output filepaths:
-#     python_filename = f'decoder_{dep_var}_{analysis_type}_{estimator}_{atlas}.py'
-#     job_filename = f'QB3_decoder_{dep_var}_{analysis_type}_{estimator}_{atlas}_job.sh'
+#     python_filename = f'decoder_{y_col}_{analysis_type}_{estimator}_{atlas}.py'
+#     job_filename = f'QB3_decoder_{y_col}_{analysis_type}_{estimator}_{atlas}_job.sh'
 
 #     python_mgt_filepath = os.path.join(mgt_working_dir, python_filename)
 #     job_mgt_filepath = os.path.join(mgt_working_dir, job_filename)
@@ -454,15 +488,15 @@ def decoder_save(decoder_results, main_dir, dep_var, analysis_type, estimator_ty
 
 # df=pd.read_csv('{csv}')
 
-# decoder_prep(estimator_type='{estimator_type}',df=df,dep_var='{dep_var}',atlas='{atlas}')
+# decoder_prep(estimator_type='{estimator_type}',df=df,y_col='{y_col}',atlas='{atlas}')
 
-# decoder_run(wmaps_train=wmaps_train, wmaps_test=wmaps_test,
+# decoder_run(X_train=X_train, X_test=X_test,
 #             y_train=y_train, y_test=y_test, estimator='{estimator}', 
 #             masker=masker, scoring='neg_mean_squared_error', screening_percentile=5, 
 #             n_jobs=12, standardize=True)
 
 # decoder_save(decoder=decoder, main_dir={mgt_working_dir},
-#                 dep_var='{dep_var}', analysis_type='{analysis_type}')
+#                 y_col='{y_col}', analysis_type='{analysis_type}')
 #     """
 
 #     with open(python_local_ldrive_filepath, 'w') as f:
