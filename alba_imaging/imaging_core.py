@@ -170,9 +170,9 @@ def get_lava_wmap_filepaths(df,
                 # and remove the filepath from the w-map column, replace with NaN:
                 df.at[index, 'wmap_lava'] = np.nan
 
-    # Print how many cases have and do not have valid w-maps:
-    print(f'{len(df[df["wmap_lava"] != ""])} cases have valid w-maps.')
-    print(f'{len(df[df["wmap_lava"] == ""])} cases do not have valid w-maps.')
+    # Count how many cases have valid w-maps:
+    print(f'{len(df[df["wmap_lava"].notnull()])} cases have valid LAVA w-map filepaths.')
+    print(f'{len(df[df["wmap_lava"].isnull()])} cases have invalid LAVA w-map filepaths.')
     
     # NOTE: TEST FOR MGT FILEPATH VERSION:
     # Make a copy of the wmap_lava column called wmap_lava_mgt and replace wmaps_dir part of each filepath with wmaps_dir_mgt:

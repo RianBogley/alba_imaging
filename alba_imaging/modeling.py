@@ -37,7 +37,7 @@ from sklearn.feature_selection import VarianceThreshold
 from sklearn.linear_model import LogisticRegression, RidgeCV, LogisticRegressionCV
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, classification_report, mean_squared_log_error, confusion_matrix
-from sklearn.model_selection import GridSearchCV, train_test_split, RepeatedStratifiedKFold
+from sklearn.model_selection import GridSearchCV, train_test_split, RepeatedStratifiedKFold, LeaveOneOut
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
@@ -62,7 +62,6 @@ def decoder_python_job(csv,
                        X_col,
                        local_ldrive_dir,
                        mgt_ldrive_dir,
-                       mgt_working_dir,
                        analysis_type,
                        estimator_type,
                        atlas,
@@ -98,12 +97,12 @@ def decoder_python_job(csv,
     """
 
     # Set up the run info:
-    run_name = f'decoder_{y_col}_{analysis_type}_{estimator_type}_{atlas}'
+    run_name = f'decoder_{y_col}_{analysis_type}_{estimator_type}_ttr{train_test_ratio}_{atlas}'
     python_filename = f'{run_name}.py'
-    run_dir = os.path.join(mgt_working_dir, run_name)
-    run_local_dir = os.path.join(local_ldrive_dir, run_name)
-    python_mgt_filepath = os.path.join(mgt_working_dir, python_filename)
-    python_local_ldrive_filepath = os.path.join(run_local_dir, python_filename)
+    mgt_run_dir = os.path.join(mgt_ldrive_dir, run_name)
+    local_run_dir = os.path.join(local_ldrive_dir, run_name)
+    mgt_run_python_filepath = os.path.join(mgt_run_dir, python_filename)
+    local_run_python_filepath = os.path.join(local_run_dir, python_filename) 
 
     # Set up the contents of the python script to be run on the MGT node:
     python_script_text = f"""# Import modules:
@@ -133,12 +132,9 @@ start_time = time.time()
 start_memory = memory_usage_mb()
 
 # Make the main mgt_working_dir:
-if not os.path.exists('{mgt_working_dir}'):
-    os.mkdir('{mgt_working_dir}')
-
-# Make the run subdir in the main mgt_working_dir:
-if not os.path.exists('{run_dir}'):
-    os.mkdir('{run_dir}')
+if not os.path.exists('{mgt_run_dir}'):
+    print(f'Creating run directory: {mgt_run_dir}')
+    os.mkdir('{mgt_run_dir}')
 
 # Import the csv as dataframe:
 df=pd.read_csv('{csv}')
@@ -181,7 +177,7 @@ decoder_results = decoder_run(y_col='{y_col}',
 run_time = time.time()
 print(decoder_results)
                                 
-decoder_save(decoder_results=decoder_results, main_dir='{run_dir}',
+decoder_save(decoder_results=decoder_results, main_dir='{mgt_run_dir}',
                 y_col='{y_col}', analysis_type='{analysis_type}', estimator_type='{estimator_type}', atlas='{atlas}')
             
 
@@ -197,7 +193,7 @@ total_time = end_time - start_time
 memory_used = end_memory - start_memory
 
 # Save the results of the times to a txt file:
-with open('{run_dir}/{run_name}_run_info.txt', 'w') as f:
+with open('{mgt_run_dir}/{run_name}_run_info.txt', 'w') as f:
     # Print the info about the run:
     f.write(f'Run information:\\n')
     f.write(f'\\n')
@@ -232,21 +228,19 @@ with open('{run_dir}/{run_name}_run_info.txt', 'w') as f:
     f.write(f'\\n')
     f.write(f'Memory used: {'{memory_used}'} MB.\\n')
 
-# Check if the mgt L drive path exists, if so, copy the results folder to it and overwrite if it exists:
-if os.path.exists('{mgt_ldrive_dir}') and os.path.exists('{run_dir}'):
-    shutil.copytree('{run_dir}', '{mgt_ldrive_dir}/{run_name}', dirs_exist_ok=True)
 
 """
     # Check if the local_ldrive_filepath doesn't exist, if it doesn't, create it:
-    if not os.path.exists(run_local_dir):
-        print(f'Creating run directory: {run_local_dir}')
-        os.mkdir(run_local_dir)
+    if not os.path.exists(local_run_dir):
+        print(f'Creating run directory: {local_run_dir}')
+        os.mkdir(local_run_dir)
+    
     # Check if the path exists, if so, save the python script to it:
-    print(f'Python script saved to: {python_local_ldrive_filepath}')
-    with open(python_local_ldrive_filepath, 'w') as f:
+    print(f'Python script saved to: {local_run_python_filepath}')
+    with open(local_run_python_filepath, 'w') as f:
         f.write(python_script_text)
 
-    return run_name, python_filename, run_dir, python_local_ldrive_filepath
+    return run_name, python_filename, local_run_dir, local_run_python_filepath
 
 def decoder_split_data(wmaps, y, train_test_ratio=0.8, stratify=True):
     """
@@ -299,6 +293,8 @@ def decoder_prep(df,
         estimator = RidgeCV(alphas=[0.1, 1.0, 10.0], cv=5)
     elif estimator_type == "svr":
         estimator = SVR(kernel='linear')
+    elif estimator_type == "logistic":
+        estimator = LogisticRegressionCV(cv=5, random_state=0, max_iter=10000)
 
     if atlas == "harvard_oxford":
         atlas = nilearn.datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
@@ -403,6 +399,7 @@ def decoder_run(y_col,
     # Define the decoder:
     decoder = DecoderRegressor(estimator=estimator,
                                 mask=masker,
+                                scoring=scoring,
                                 screening_percentile=screening_percentile,
                                 n_jobs=n_jobs,
                                 standardize=standardize)
@@ -456,57 +453,45 @@ def decoder_save(decoder_results, main_dir, y_col, analysis_type, estimator_type
 
 # %%
 
+def loocv_decoder_run(X,
+                      y,
+                      n_jobs=8,
+                      standardize=True,
+                      smoothing_fwhm=30,
+                      screening_percentile=10):
+    """
+    Run the decoder using Leave-One-Out Cross-Validation (LOOCV).
+    """
+    print('Running loocv_decoder_run...')
+    # Set up the masker and feature selection:
+    nifti_masker = NiftiMasker(standardize=standardize, smoothing_fwhm=smoothing_fwhm, memory='nilearn_cache')
+    variance_threshold = VarianceThreshold(threshold=.01)
+    decoder = DecoderRegressor(estimator='ridge_regressor',
+                               scoring='neg_mean_absolute_error',
+                               screening_percentile=screening_percentile, n_jobs=n_jobs)
+    # LOOCV setup
+    loo = LeaveOneOut()
+    scores = []
 
+    for train_index, test_index in loo.split(X):
+        # Split the data
+        X_train, X_test = [X[i] for i in train_index], [X[i] for i in test_index]
+        y_train, y_test = y[train_index], y[test_index]
+        # Apply masker and feature selection
+        X_masked = nifti_masker.fit_transform(X_train)
+        gm_maps_thresholded = variance_threshold.fit_transform(X_masked)
+        mask = nifti_masker.inverse_transform(variance_threshold.get_support())
+        # Update the mask of the decoder
+        decoder.mask = mask
+        # Fit and predict with the decoder
+        decoder.fit(X_train, y_train)
+        y_pred = decoder.predict(X_test)
+        # Store the score
+        scores.append(-decoder.cv_scores_['beta'])
+        # Get the weight img:
+        weight_img = decoder.coef_img_['beta']
 
-
-# def decoder_wynton_job(csv,
-#                        y_col,
-#                        mgt_ldrive_dir='/Users/rbogley/Desktop/',
-#                        mgt_working_dir='/mgt/language/rbogley/Production/projects/wmaps_project/',
-#                        wynton_venv_dir="/wynton/home/tempini/rbogley/wmaps_predictor/",
-#                        analysis_type='voxel',
-#                        estimator='ridge',
-#                        atlas='harvard_oxford',):
-#     """
-#     This function creates a python and shell script file for running the decoder on Wynton.
-#     """
-
-#     # Set up the output filepaths:
-#     python_filename = f'decoder_{y_col}_{analysis_type}_{estimator}_{atlas}.py'
-#     job_filename = f'QB3_decoder_{y_col}_{analysis_type}_{estimator}_{atlas}_job.sh'
-
-#     python_mgt_filepath = os.path.join(mgt_working_dir, python_filename)
-#     job_mgt_filepath = os.path.join(mgt_working_dir, job_filename)
-
-#     python_local_ldrive_filepath = os.path.join(mgt_ldrive_dir, python_filename)
-#     job_ldrive_filepath = os.path.join(mgt_ldrive_dir, job_filename)
-
-#     # Set up the contents of the python script and Wynton job file:
-#     python_script_text = f"""# Import modules:
-# import pandas as pd
-# from alba_imaging.modeling import decoder_split_data, decoder_prep, decoder_run, decoder_save
-
-# df=pd.read_csv('{csv}')
-
-# decoder_prep(estimator_type='{estimator_type}',df=df,y_col='{y_col}',atlas='{atlas}')
-
-# decoder_run(X_train=X_train, X_test=X_test,
-#             y_train=y_train, y_test=y_test, estimator='{estimator}', 
-#             masker=masker, scoring='neg_mean_squared_error', screening_percentile=5, 
-#             n_jobs=12, standardize=True)
-
-# decoder_save(decoder=decoder, main_dir={mgt_working_dir},
-#                 y_col='{y_col}', analysis_type='{analysis_type}')
-#     """
-
-#     with open(python_local_ldrive_filepath, 'w') as f:
-#         f.write(python_script_text)
-
-#     create_wynton_job_file(mgt_ldrive_dir=mgt_ldrive_dir,
-#                             wynton_venv_dir=wynton_venv_dir,
-#                             python_mgt_filepath=python_mgt_filepath,
-#                             jobfile_name=job_filename)
-
-
-    
-# %%
+    # Calculate average performance
+    average_score = np.mean(scores)
+    print(f'Average explained variance in LOOCV: {average_score}')
+    return average_score, weight_img

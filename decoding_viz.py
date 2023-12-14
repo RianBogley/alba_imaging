@@ -45,7 +45,7 @@ from alba_imaging.importing import import_pickle
 # ---------------------------------------------------------------------------- #
 # Specify working directory:
 # main_dir = '/shared/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
-main_dir = '/volumes/language/language/rbogley/wmaps_decoding/neuropsych_lava/'
+main_dir = '/volumes/language/language/rbogley/wmaps_decoding/neuropsych_lava/No_HC/'
 
 
 # %%

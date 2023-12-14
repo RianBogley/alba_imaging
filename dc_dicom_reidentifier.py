@@ -38,8 +38,8 @@ import shutil
 
 # %%
 # Path to the folder containing the DICOM files
-clinicalreferrals_dir = "L:/language/Dyslexia_project/ClinicalReferrals/"
-dyslexiascans_dir = "L:/language/Dyslexia_project/Participants/"
+clinicalreferrals_dir = "/Volumes/language/language/Dyslexia_project/ClinicalReferrals/"
+dyslexiascans_dir = "/Volumes/language/language/Dyslexia_project/Participants/"
 
 # Ask for the patient's name:
 print("IMPORTANT: PLEASE ENTER ALL THE FOLLOWING INFORMATION ACCURATELY!")
@@ -69,25 +69,41 @@ scan_types = [
     'dti_2mm_m3p2_b2500_96dir_10b0s_TRACEW',
     'dti_2mm_m3p2_b2500_96dir_10b0s_ADC',
     ]
-# %%
-# Find any subdirectories in scans_dir that start with the strings in scan_types and copy them to patient_dir:
-for scan_type in scan_types:
-    for dirpath, dirnames, filenames in os.walk(scans_dir):
-        for dirname in [d for d in dirnames if d.startswith(scan_type)]:
-            shutil.copytree(os.path.join(dirpath, dirname), os.path.join(patient_dir, dirname))
 
-# Remove any files in the newly copied subdirectories that end in .nii or .gz:
-for dirpath, dirnames, filenames in os.walk(patient_dir):
-    for filename in [f for f in filenames if f.endswith('.nii') or f.endswith('.gz')]:
-        os.remove(os.path.join(dirpath, filename))
+# %%
+# Save the subdirs of scans_dir that start with the strings in scan_types to a list:
+subdirs = []
+for dirpath, dirnames, filenames in os.walk(scans_dir):
+    for dirname in [d for d in dirnames if d.startswith(tuple(scan_types))]:
+        subdirs.append(os.path.join(dirpath, dirname))
+        print(subdirs)
+
+# %%
+# Copy the subdirs to the patient_dir with any ".dcm" files in them too, but no other files:
+for subdir in subdirs:
+    # Copy the subdir to the patient_dir:
+    new_dir = os.path.join(patient_dir, os.path.basename(subdir))
+    if not os.path.exists(new_dir):
+        os.mkdir(new_dir)
+    # Copy over any files that end in .dcm from the subdirectories in scans_dir to the new_dir in patient_dir:
+    for filename in [f for f in os.listdir(subdir) if f.endswith(".dcm")]:
+        old_file = os.path.join(subdir, filename)
+        new_file = os.path.join(new_dir, filename)
+        shutil.copyfile(old_file, new_file)
+    # Check that all files were copied succesfully, if not, print the files that were not copied:
+    if len(os.listdir(subdir)) != len(os.listdir(new_dir)):
+        print("The following files were not copied succesfully:")
+        print([f for f in os.listdir(subdir) if f not in os.listdir(new_dir)])
 
 # Find all dicom files in the specified directory, in all subdirectories:
 dicom_files = []
 for dirpath, dirnames, filenames in os.walk(patient_dir):
     for filename in [f for f in filenames if f.endswith(".dcm")]:
         dicom_files.append(os.path.join(dirpath, filename))
+        print(dicom_files)
 
-dicom_files
+for subdir in os.listdir(patient_dir):
+    print(f"There are {len(os.listdir(os.path.join(patient_dir, subdir)))} dicom files in {subdir}")
 
 # Edit the metadata of the dicom files to change the patient
 # name and PatientID
@@ -100,13 +116,15 @@ for dicom_file in dicom_files:
     # ds.StudyDate = dcdate
     ds.save_as(dicom_file)
 
-
 for dicom_file in dicom_files:
     ds = pydicom.dcmread(dicom_file)
     print(ds.PatientName, ds.PatientID, ds.AccessionNumber, ds.StudyDate)
 
+# %%
 # Clear PIDN, First_name, and Last_name:
 pidn = ''
 first_name = ''
 last_name = ''
 dcdate = ''
+
+# %%

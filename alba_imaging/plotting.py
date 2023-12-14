@@ -10,8 +10,6 @@ import matplotlib.pyplot as plt
 #                               DEFINE FUNCTIONS                               #
 # ---------------------------------------------------------------------------- #
 
-#TODO: CHECK IF YOU CAN APPLY ATLAS ON A RESULT NIFTI TO SHOW THE CLUSTERS BY ATLAS REGION
-
 # Plot nifti image over template in html view
 def html_brain_plot(nifti,bg_img):
     """
